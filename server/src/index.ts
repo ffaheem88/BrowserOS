@@ -28,7 +28,7 @@ async function startServer() {
 
     // Run database migrations
     logger.info('Running database migrations...');
-    const migrationsPath = join(__dirname, '../../database/migrations');
+    const migrationsPath = process.env.MIGRATIONS_PATH || join(__dirname, '../../database/migrations');
     const migrator = createMigrator(db, migrationsPath);
     const status = await migrator.status();
 
