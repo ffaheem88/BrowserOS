@@ -1,0 +1,102 @@
+/* Custom styles for react-resizable handles */
+
+.react-resizable {
+  position: relative;
+}
+
+.react-resizable-handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background-repeat: no-repeat;
+  background-origin: content-box;
+  box-sizing: border-box;
+  background-image: none;
+  background-position: center;
+  z-index: 10;
+}
+
+/* Southeast (bottom-right) corner */
+.react-resizable-handle-se {
+  bottom: 0;
+  right: 0;
+  cursor: nwse-resize;
+}
+
+/* Southwest (bottom-left) corner */
+.react-resizable-handle-sw {
+  bottom: 0;
+  left: 0;
+  cursor: nesw-resize;
+}
+
+/* Northeast (top-right) corner */
+.react-resizable-handle-ne {
+  top: 0;
+  right: 0;
+  cursor: nesw-resize;
+}
+
+/* Northwest (top-left) corner */
+.react-resizable-handle-nw {
+  top: 0;
+  left: 0;
+  cursor: nwse-resize;
+}
+
+/* East (right) edge */
+.react-resizable-handle-e {
+  width: 10px;
+  height: 100%;
+  right: 0;
+  top: 0;
+  cursor: ew-resize;
+}
+
+/* West (left) edge */
+.react-resizable-handle-w {
+  width: 10px;
+  height: 100%;
+  left: 0;
+  top: 0;
+  cursor: ew-resize;
+}
+
+/* North (top) edge */
+.react-resizable-handle-n {
+  width: 100%;
+  height: 10px;
+  top: 0;
+  left: 0;
+  cursor: ns-resize;
+}
+
+/* South (bottom) edge */
+.react-resizable-handle-s {
+  width: 100%;
+  height: 10px;
+  bottom: 0;
+  left: 0;
+  cursor: ns-resize;
+}
+
+/* Visual indicator for resize handles on hover */
+.react-resizable-handle::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-color: transparent;
+  transition: background-color 0.15s ease;
+}
+
+.react-resizable:hover .react-resizable-handle::after {
+  background-color: rgba(59, 130, 246, 0.2);
+}
+
+/* Corner resize handle visual */
+.react-resizable-handle-se::after,
+.react-resizable-handle-sw::after,
+.react-resizable-handle-ne::after,
+.react-resizable-handle-nw::after {
+  border-radius: 2px;
+}

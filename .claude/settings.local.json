@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tree:*)",
+      "Bash(dir:*)",
+      "Bash(test:*)",
+      "Bash(npm run type-check:*)",
+      "Bash(npm install)",
+      "Bash(timeout 5 npm run dev)",
+      "Bash(npx tsc:*)",
+      "Bash(cat:*)",
+      "Bash(npm install:*)",
+      "Bash(npm run dev:*)",
+      "Bash(npm test:*)",
+      "Bash(docker-compose up:*)",
+      "mcp__ide__getDiagnostics"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

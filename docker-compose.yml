@@ -1,0 +1,136 @@
+version: '3.9'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: browseros-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: browseros
+      POSTGRES_USER: browseros_user
+      POSTGRES_PASSWORD: browseros_dev_password
+      POSTGRES_INITDB_ARGS: "-E UTF8"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U browseros_user -d browseros"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - browseros-network
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: browseros-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass browseros_redis_password
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - browseros-network
+
+  # Backend API Server
+  backend:
+    build:
+      context: ./server
+      dockerfile: ../docker/Dockerfile.backend
+      target: development
+    container_name: browseros-backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      PORT: 5000
+      DATABASE_URL: postgresql://browseros_user:browseros_dev_password@postgres:5432/browseros
+      REDIS_URL: redis://:browseros_redis_password@redis:6379
+      JWT_SECRET: dev_jwt_secret_change_in_production
+      JWT_REFRESH_SECRET: dev_jwt_refresh_secret_change_in_production
+      JWT_EXPIRES_IN: 15m
+      JWT_REFRESH_EXPIRES_IN: 30d
+      CORS_ORIGIN: http://localhost:3000
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./server/src:/app/src
+      - ./shared:/app/shared
+      - backend_node_modules:/app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - browseros-network
+
+  # Frontend Development Server
+  frontend:
+    build:
+      context: ./client
+      dockerfile: ../docker/Dockerfile.frontend
+      target: development
+    container_name: browseros-frontend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      VITE_API_URL: http://localhost:5000
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./client/src:/app/src
+      - ./client/public:/app/public
+      - ./shared:/app/shared
+      - frontend_node_modules:/app/node_modules
+    depends_on:
+      - backend
+    networks:
+      - browseros-network
+
+  # MinIO (S3-compatible object storage) - for file storage
+  minio:
+    image: minio/minio:latest
+    container_name: browseros-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: browseros_minio
+      MINIO_ROOT_PASSWORD: browseros_minio_password
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - browseros-network
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  minio_data:
+    driver: local
+  backend_node_modules:
+    driver: local
+  frontend_node_modules:
+    driver: local
+
+networks:
+  browseros-network:
+    driver: bridge
