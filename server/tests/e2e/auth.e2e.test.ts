@@ -1,438 +1,556 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { resetDatabase } from '../utils/testDb';
+import { describe, it, expect, beforeEach } from 'vitest';
+import supertest from 'supertest';
+import { app } from '../../src/app.js';
+import { resetDatabase } from '../utils/testDb.js';
+import type { RegisterData, LoginCredentials } from '@shared/types';
+
+const request = supertest(app);
 
 /**
  * End-to-End Authentication Tests
  * These tests simulate complete user flows from registration to logout
  */
 
-// Mock HTTP client - will be replaced with actual implementation
-// import axios from 'axios';
-// const API_URL = 'http://localhost:5001/api/v1';
-
 describe('E2E: Complete Authentication Flows', () => {
-  beforeAll(async () => {
-    // Ensure clean database state
-    await resetDatabase();
-  });
-
-  afterAll(async () => {
-    // Cleanup
+  beforeEach(async () => {
     await resetDatabase();
   });
 
   describe('Complete Registration Flow', () => {
-    it('should allow new user to register and receive tokens', async () => {
-      const userData = {
+    it('should allow new user to register and immediately use access token', async () => {
+      const userData: RegisterData = {
         email: 'e2e-newuser@example.com',
         password: 'SecurePassword123!',
         displayName: 'E2E Test User',
       };
 
-      // Expected behavior:
-      // const response = await axios.post(`${API_URL}/auth/register`, userData);
+      // Step 1: Register
+      const registerResponse = await request
+        .post('/api/v1/auth/register')
+        .send(userData)
+        .expect(201);
 
-      // expect(response.status).toBe(201);
-      // expect(response.data.data.user).toBeDefined();
-      // expect(response.data.data.user.email).toBe(userData.email);
-      // expect(response.data.data.accessToken).toBeDefined();
-      // expect(response.data.data.refreshToken).toBeDefined();
+      expect(registerResponse.body.user).toBeDefined();
+      expect(registerResponse.body.user.email).toBe(userData.email.toLowerCase());
+      expect(registerResponse.body.accessToken).toBeDefined();
+      expect(registerResponse.body.refreshToken).toBeDefined();
 
-      // Verify user can immediately use access token
-      // const meResponse = await axios.get(`${API_URL}/auth/me`, {
-      //   headers: { Authorization: `Bearer ${response.data.data.accessToken}` }
-      // });
-      // expect(meResponse.status).toBe(200);
-      // expect(meResponse.data.data.email).toBe(userData.email);
+      const { accessToken } = registerResponse.body;
 
-      expect(userData.email).toContain('e2e-newuser');
+      // Step 2: Immediately verify can use access token
+      const meResponse = await request
+        .get('/api/v1/auth/me')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(200);
+
+      expect(meResponse.body.user.email).toBe(userData.email.toLowerCase());
+      expect(meResponse.body.user.displayName).toBe(userData.displayName);
     });
 
     it('should prevent duplicate registration with same email', async () => {
-      const userData = {
+      const userData: RegisterData = {
         email: 'e2e-duplicate@example.com',
         password: 'SecurePassword123!',
         displayName: 'First User',
       };
 
-      // Register first time
-      // await axios.post(`${API_URL}/auth/register`, userData);
+      // Step 1: Register first time
+      await request.post('/api/v1/auth/register').send(userData).expect(201);
 
-      // Attempt duplicate registration
-      // try {
-      //   await axios.post(`${API_URL}/auth/register`, userData);
-      //   expect.fail('Should have thrown error');
-      // } catch (error: any) {
-      //   expect(error.response.status).toBe(409);
-      //   expect(error.response.data.error.message).toMatch(/already.*exists/i);
-      // }
+      // Step 2: Attempt duplicate registration
+      const duplicateResponse = await request
+        .post('/api/v1/auth/register')
+        .send(userData)
+        .expect(409);
 
-      expect(userData.email).toContain('e2e-duplicate');
+      expect(duplicateResponse.body.error.message).toMatch(/already.*exists/i);
     });
 
     it('should validate registration input and provide clear errors', async () => {
       const invalidCases = [
         {
-          data: { email: '', password: 'Pass123!', displayName: 'User' },
-          expectedError: /email.*required/i,
+          data: { password: 'Pass123!', displayName: 'User' },
+          expectedPattern: /email/i,
         },
         {
-          data: { email: 'test@test.com', password: '', displayName: 'User' },
-          expectedError: /password.*required/i,
+          data: { email: 'test@test.com', displayName: 'User' },
+          expectedPattern: /password/i,
         },
         {
-          data: { email: 'test@test.com', password: 'Pass123!', displayName: '' },
-          expectedError: /displayName.*required/i,
+          data: { email: 'test@test.com', password: 'Pass123!' },
+          expectedPattern: /displayName/i,
         },
         {
           data: { email: 'invalid-email', password: 'Pass123!', displayName: 'User' },
-          expectedError: /invalid.*email/i,
+          expectedPattern: /email/i,
         },
         {
           data: { email: 'test@test.com', password: 'weak', displayName: 'User' },
-          expectedError: /password.*requirements/i,
+          expectedPattern: /password/i,
         },
       ];
 
       for (const testCase of invalidCases) {
-        // try {
-        //   await axios.post(`${API_URL}/auth/register`, testCase.data);
-        //   expect.fail('Should have thrown error');
-        // } catch (error: any) {
-        //   expect(error.response.status).toBe(400);
-        //   expect(error.response.data.error.message).toMatch(testCase.expectedError);
-        // }
-      }
+        const response = await request
+          .post('/api/v1/auth/register')
+          .send(testCase.data)
+          .expect(400);
 
-      expect(invalidCases.length).toBe(5);
+        expect(response.body.error.message).toMatch(testCase.expectedPattern);
+      }
     });
   });
 
   describe('Complete Login Flow', () => {
     it('should allow registered user to login and access protected resources', async () => {
-      // First register a user
-      const userData = {
+      const userData: RegisterData = {
         email: 'e2e-login@example.com',
         password: 'LoginPassword123!',
         displayName: 'Login Test User',
       };
 
-      // await axios.post(`${API_URL}/auth/register`, userData);
+      // Step 1: Register
+      await request.post('/api/v1/auth/register').send(userData).expect(201);
 
-      // Now login
-      const loginData = {
+      // Step 2: Login
+      const loginData: LoginCredentials = {
         email: userData.email,
         password: userData.password,
       };
 
-      // const loginResponse = await axios.post(`${API_URL}/auth/login`, loginData);
-      // expect(loginResponse.status).toBe(200);
-      // expect(loginResponse.data.data.accessToken).toBeDefined();
-      // expect(loginResponse.data.data.refreshToken).toBeDefined();
+      const loginResponse = await request
+        .post('/api/v1/auth/login')
+        .send(loginData)
+        .expect(200);
 
-      // Use access token to access protected endpoint
-      // const meResponse = await axios.get(`${API_URL}/auth/me`, {
-      //   headers: { Authorization: `Bearer ${loginResponse.data.data.accessToken}` }
-      // });
-      // expect(meResponse.status).toBe(200);
-      // expect(meResponse.data.data.email).toBe(userData.email);
+      expect(loginResponse.body.accessToken).toBeDefined();
+      expect(loginResponse.body.refreshToken).toBeDefined();
+      expect(loginResponse.body.user.email).toBe(userData.email.toLowerCase());
 
-      expect(userData.email).toContain('e2e-login');
+      // Step 3: Use access token to access protected endpoint
+      const meResponse = await request
+        .get('/api/v1/auth/me')
+        .set('Authorization', `Bearer ${loginResponse.body.accessToken}`)
+        .expect(200);
+
+      expect(meResponse.body.user.email).toBe(userData.email.toLowerCase());
+      expect(meResponse.body.user.displayName).toBe(userData.displayName);
     });
 
     it('should reject login with incorrect password', async () => {
-      const userData = {
+      const userData: RegisterData = {
         email: 'e2e-wrongpass@example.com',
         password: 'CorrectPassword123!',
         displayName: 'Wrong Pass User',
       };
 
-      // await axios.post(`${API_URL}/auth/register`, userData);
+      // Step 1: Register
+      await request.post('/api/v1/auth/register').send(userData).expect(201);
 
-      // Attempt login with wrong password
-      // try {
-      //   await axios.post(`${API_URL}/auth/login`, {
-      //     email: userData.email,
-      //     password: 'WrongPassword123!',
-      //   });
-      //   expect.fail('Should have thrown error');
-      // } catch (error: any) {
-      //   expect(error.response.status).toBe(401);
-      //   expect(error.response.data.error.message).toMatch(/invalid.*credentials/i);
-      // }
+      // Step 2: Attempt login with wrong password
+      const loginResponse = await request
+        .post('/api/v1/auth/login')
+        .send({
+          email: userData.email,
+          password: 'WrongPassword123!',
+        })
+        .expect(401);
 
-      expect(userData.password).not.toBe('WrongPassword123!');
+      expect(loginResponse.body.error.message).toMatch(/invalid.*credentials/i);
     });
 
     it('should reject login with non-existent email', async () => {
-      // try {
-      //   await axios.post(`${API_URL}/auth/login`, {
-      //     email: 'nonexistent@example.com',
-      //     password: 'AnyPassword123!',
-      //   });
-      //   expect.fail('Should have thrown error');
-      // } catch (error: any) {
-      //   expect(error.response.status).toBe(401);
-      //   expect(error.response.data.error.message).toMatch(/invalid.*credentials/i);
-      // }
+      const response = await request
+        .post('/api/v1/auth/login')
+        .send({
+          email: 'nonexistent@example.com',
+          password: 'AnyPassword123!',
+        })
+        .expect(401);
 
-      expect(true).toBe(true);
+      expect(response.body.error.message).toMatch(/invalid.*credentials/i);
+    });
+
+    it('should handle case-insensitive email login', async () => {
+      const userData: RegisterData = {
+        email: 'e2e-CaseTest@Example.COM',
+        password: 'CasePassword123!',
+        displayName: 'Case Test User',
+      };
+
+      // Register with mixed case email
+      await request.post('/api/v1/auth/register').send(userData).expect(201);
+
+      // Login with different case
+      const loginResponse = await request
+        .post('/api/v1/auth/login')
+        .send({
+          email: 'E2E-casetest@example.com',
+          password: userData.password,
+        })
+        .expect(200);
+
+      expect(loginResponse.body.user.email).toBe('e2e-casetest@example.com');
     });
   });
 
   describe('Complete Token Refresh Flow', () => {
     it('should refresh access token using refresh token', async () => {
-      // Register and login
-      const userData = {
+      const userData: RegisterData = {
         email: 'e2e-refresh@example.com',
         password: 'RefreshPassword123!',
         displayName: 'Refresh Test User',
       };
 
-      // const registerResponse = await axios.post(`${API_URL}/auth/register`, userData);
-      // const { refreshToken } = registerResponse.data.data;
+      // Step 1: Register
+      const registerResponse = await request
+        .post('/api/v1/auth/register')
+        .send(userData)
+        .expect(201);
 
-      // Wait a moment
-      // await new Promise(resolve => setTimeout(resolve, 1000));
+      const { refreshToken: oldRefreshToken } = registerResponse.body;
 
-      // Refresh token
-      // const refreshResponse = await axios.post(`${API_URL}/auth/refresh`, {
-      //   refreshToken,
-      // });
+      // Step 2: Refresh token
+      const refreshResponse = await request
+        .post('/api/v1/auth/refresh')
+        .send({ refreshToken: oldRefreshToken })
+        .expect(200);
 
-      // expect(refreshResponse.status).toBe(200);
-      // expect(refreshResponse.data.data.accessToken).toBeDefined();
-      // expect(refreshResponse.data.data.refreshToken).toBeDefined();
-      // expect(refreshResponse.data.data.refreshToken).not.toBe(refreshToken); // New token
+      expect(refreshResponse.body.accessToken).toBeDefined();
+      expect(refreshResponse.body.refreshToken).toBeDefined();
+      expect(refreshResponse.body.refreshToken).not.toBe(oldRefreshToken); // Token rotation
 
-      // Verify new access token works
-      // const meResponse = await axios.get(`${API_URL}/auth/me`, {
-      //   headers: { Authorization: `Bearer ${refreshResponse.data.data.accessToken}` }
-      // });
-      // expect(meResponse.status).toBe(200);
+      // Step 3: Verify new access token works
+      const meResponse = await request
+        .get('/api/v1/auth/me')
+        .set('Authorization', `Bearer ${refreshResponse.body.accessToken}`)
+        .expect(200);
 
-      expect(userData.email).toContain('e2e-refresh');
+      expect(meResponse.body.user.email).toBe(userData.email.toLowerCase());
+
+      // Step 4: Verify old refresh token is invalidated
+      const oldTokenResponse = await request
+        .post('/api/v1/auth/refresh')
+        .send({ refreshToken: oldRefreshToken })
+        .expect(401);
+
+      expect(oldTokenResponse.body.error).toBeDefined();
     });
 
-    it('should reject expired refresh token', async () => {
-      // This would require creating an expired token or waiting for expiration
-      // For now, test with invalid token
+    it('should reject invalid refresh token', async () => {
+      const response = await request
+        .post('/api/v1/auth/refresh')
+        .send({ refreshToken: 'invalid-token-string' })
+        .expect(401);
 
-      // try {
-      //   await axios.post(`${API_URL}/auth/refresh`, {
-      //     refreshToken: 'expired-or-invalid-token',
-      //   });
-      //   expect.fail('Should have thrown error');
-      // } catch (error: any) {
-      //   expect(error.response.status).toBe(401);
-      // }
-
-      expect(true).toBe(true);
+      expect(response.body.error).toBeDefined();
     });
   });
 
   describe('Complete Logout Flow', () => {
     it('should logout user and invalidate session', async () => {
-      // Register and login
-      const userData = {
+      const userData: RegisterData = {
         email: 'e2e-logout@example.com',
         password: 'LogoutPassword123!',
         displayName: 'Logout Test User',
       };
 
-      // const registerResponse = await axios.post(`${API_URL}/auth/register`, userData);
-      // const { accessToken, refreshToken } = registerResponse.data.data;
+      // Step 1: Register
+      const registerResponse = await request
+        .post('/api/v1/auth/register')
+        .send(userData)
+        .expect(201);
 
-      // Verify token works before logout
-      // const meResponse1 = await axios.get(`${API_URL}/auth/me`, {
-      //   headers: { Authorization: `Bearer ${accessToken}` }
-      // });
-      // expect(meResponse1.status).toBe(200);
+      const { accessToken, refreshToken } = registerResponse.body;
 
-      // Logout
-      // const logoutResponse = await axios.post(
-      //   `${API_URL}/auth/logout`,
-      //   { refreshToken },
-      //   { headers: { Authorization: `Bearer ${accessToken}` } }
-      // );
-      // expect(logoutResponse.status).toBe(200);
+      // Step 2: Verify token works before logout
+      await request
+        .get('/api/v1/auth/me')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(200);
 
-      // Verify refresh token is invalidated
-      // try {
-      //   await axios.post(`${API_URL}/auth/refresh`, { refreshToken });
-      //   expect.fail('Should have thrown error');
-      // } catch (error: any) {
-      //   expect(error.response.status).toBe(401);
-      // }
+      // Step 3: Logout
+      await request
+        .post('/api/v1/auth/logout')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ refreshToken })
+        .expect(200);
 
-      expect(userData.email).toContain('e2e-logout');
+      // Step 4: Verify refresh token is invalidated
+      const refreshResponse = await request
+        .post('/api/v1/auth/refresh')
+        .send({ refreshToken })
+        .expect(401);
+
+      expect(refreshResponse.body.error).toBeDefined();
     });
 
     it('should allow logout even with invalid refresh token (idempotent)', async () => {
-      const userData = {
+      const userData: RegisterData = {
         email: 'e2e-logout2@example.com',
         password: 'LogoutPassword123!',
         displayName: 'Logout Test User 2',
       };
 
-      // const registerResponse = await axios.post(`${API_URL}/auth/register`, userData);
-      // const { accessToken } = registerResponse.data.data;
+      // Register
+      const registerResponse = await request
+        .post('/api/v1/auth/register')
+        .send(userData)
+        .expect(201);
 
-      // Logout with fake token
-      // const logoutResponse = await axios.post(
-      //   `${API_URL}/auth/logout`,
-      //   { refreshToken: 'fake-token' },
-      //   { headers: { Authorization: `Bearer ${accessToken}` } }
-      // );
-      // expect(logoutResponse.status).toBe(200);
+      const { accessToken } = registerResponse.body;
 
-      expect(userData.email).toContain('e2e-logout2');
+      // Logout with fake refresh token should still succeed
+      await request
+        .post('/api/v1/auth/logout')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ refreshToken: 'fake-token' })
+        .expect(200);
     });
   });
 
   describe('Complete Multi-Session Flow', () => {
     it('should allow user to have multiple active sessions', async () => {
-      const userData = {
+      const userData: RegisterData = {
         email: 'e2e-multisession@example.com',
         password: 'MultiSession123!',
         displayName: 'Multi Session User',
       };
 
-      // Register
-      // await axios.post(`${API_URL}/auth/register`, userData);
+      // Step 1: Register
+      await request.post('/api/v1/auth/register').send(userData).expect(201);
 
-      // Login multiple times (different devices)
-      const loginData = { email: userData.email, password: userData.password };
+      // Step 2: Login multiple times (simulating different devices)
+      const loginData: LoginCredentials = {
+        email: userData.email,
+        password: userData.password,
+      };
 
-      // const session1 = await axios.post(`${API_URL}/auth/login`, loginData);
-      // const session2 = await axios.post(`${API_URL}/auth/login`, loginData);
-      // const session3 = await axios.post(`${API_URL}/auth/login`, loginData);
+      const session1 = await request
+        .post('/api/v1/auth/login')
+        .send(loginData)
+        .expect(200);
+      const session2 = await request
+        .post('/api/v1/auth/login')
+        .send(loginData)
+        .expect(200);
+      const session3 = await request
+        .post('/api/v1/auth/login')
+        .send(loginData)
+        .expect(200);
 
-      // All sessions should be valid
-      // expect(session1.data.data.accessToken).toBeDefined();
-      // expect(session2.data.data.accessToken).toBeDefined();
-      // expect(session3.data.data.accessToken).toBeDefined();
+      // Step 3: Verify all sessions have unique tokens
+      expect(session1.body.refreshToken).not.toBe(session2.body.refreshToken);
+      expect(session2.body.refreshToken).not.toBe(session3.body.refreshToken);
+      expect(session1.body.refreshToken).not.toBe(session3.body.refreshToken);
 
-      // All refresh tokens should be different
-      // expect(session1.data.data.refreshToken).not.toBe(session2.data.data.refreshToken);
-      // expect(session2.data.data.refreshToken).not.toBe(session3.data.data.refreshToken);
-
-      expect(userData.email).toContain('e2e-multisession');
+      // Step 4: Verify all sessions work
+      await request
+        .get('/api/v1/auth/me')
+        .set('Authorization', `Bearer ${session1.body.accessToken}`)
+        .expect(200);
+      await request
+        .get('/api/v1/auth/me')
+        .set('Authorization', `Bearer ${session2.body.accessToken}`)
+        .expect(200);
+      await request
+        .get('/api/v1/auth/me')
+        .set('Authorization', `Bearer ${session3.body.accessToken}`)
+        .expect(200);
     });
 
     it('should allow logging out of specific session without affecting others', async () => {
-      const userData = {
+      const userData: RegisterData = {
         email: 'e2e-multisession2@example.com',
         password: 'MultiSession123!',
         displayName: 'Multi Session User 2',
       };
 
-      // Register and create two sessions
-      // await axios.post(`${API_URL}/auth/register`, userData);
-      const loginData = { email: userData.email, password: userData.password };
+      // Register
+      await request.post('/api/v1/auth/register').send(userData).expect(201);
 
-      // const session1 = await axios.post(`${API_URL}/auth/login`, loginData);
-      // const session2 = await axios.post(`${API_URL}/auth/login`, loginData);
+      // Create two sessions
+      const loginData: LoginCredentials = {
+        email: userData.email,
+        password: userData.password,
+      };
+
+      const session1 = await request
+        .post('/api/v1/auth/login')
+        .send(loginData)
+        .expect(200);
+      const session2 = await request
+        .post('/api/v1/auth/login')
+        .send(loginData)
+        .expect(200);
 
       // Logout session 1
-      // await axios.post(
-      //   `${API_URL}/auth/logout`,
-      //   { refreshToken: session1.data.data.refreshToken },
-      //   { headers: { Authorization: `Bearer ${session1.data.data.accessToken}` } }
-      // );
+      await request
+        .post('/api/v1/auth/logout')
+        .set('Authorization', `Bearer ${session1.body.accessToken}`)
+        .send({ refreshToken: session1.body.refreshToken })
+        .expect(200);
+
+      // Session 1 refresh token should be invalid
+      await request
+        .post('/api/v1/auth/refresh')
+        .send({ refreshToken: session1.body.refreshToken })
+        .expect(401);
 
       // Session 2 should still work
-      // const meResponse = await axios.get(`${API_URL}/auth/me`, {
-      //   headers: { Authorization: `Bearer ${session2.data.data.accessToken}` }
-      // });
-      // expect(meResponse.status).toBe(200);
-
-      expect(userData.email).toContain('e2e-multisession2');
-    });
-  });
-
-  describe('Error Recovery Flows', () => {
-    it('should handle network errors gracefully', async () => {
-      // Test client-side error handling
-      expect(true).toBe(true);
-    });
-
-    it('should handle rate limiting appropriately', async () => {
-      // Make many rapid requests
-      // Expected: After threshold, receive 429 status
-      expect(true).toBe(true);
-    });
-
-    it('should provide helpful error messages for common mistakes', async () => {
-      const testCases = [
-        { scenario: 'Missing authorization header', expectedStatus: 401 },
-        { scenario: 'Malformed token', expectedStatus: 401 },
-        { scenario: 'Expired token', expectedStatus: 401 },
-        { scenario: 'Invalid credentials', expectedStatus: 401 },
-        { scenario: 'Missing required field', expectedStatus: 400 },
-      ];
-
-      expect(testCases.length).toBe(5);
+      await request
+        .get('/api/v1/auth/me')
+        .set('Authorization', `Bearer ${session2.body.accessToken}`)
+        .expect(200);
     });
   });
 
   describe('Real-world Usage Scenarios', () => {
-    it('should handle typical user journey: register -> login -> use app -> logout', async () => {
-      const userData = {
+    it('should handle typical user journey: register -> login -> use app -> logout -> login again', async () => {
+      const userData: RegisterData = {
         email: 'e2e-journey@example.com',
         password: 'JourneyPassword123!',
         displayName: 'Journey User',
       };
 
       // 1. Register
-      // const registerResponse = await axios.post(`${API_URL}/auth/register`, userData);
-      // expect(registerResponse.status).toBe(201);
+      const registerResponse = await request
+        .post('/api/v1/auth/register')
+        .send(userData)
+        .expect(201);
 
-      // 2. Simulate app usage - access protected resource
-      // const accessToken1 = registerResponse.data.data.accessToken;
-      // const meResponse1 = await axios.get(`${API_URL}/auth/me`, {
-      //   headers: { Authorization: `Bearer ${accessToken1}` }
-      // });
-      // expect(meResponse1.status).toBe(200);
+      const accessToken1 = registerResponse.body.accessToken;
+      const refreshToken1 = registerResponse.body.refreshToken;
+
+      // 2. Use app (access protected resource)
+      const meResponse1 = await request
+        .get('/api/v1/auth/me')
+        .set('Authorization', `Bearer ${accessToken1}`)
+        .expect(200);
+      expect(meResponse1.body.user.email).toBe(userData.email.toLowerCase());
 
       // 3. Logout
-      // await axios.post(
-      //   `${API_URL}/auth/logout`,
-      //   { refreshToken: registerResponse.data.data.refreshToken },
-      //   { headers: { Authorization: `Bearer ${accessToken1}` } }
-      // );
+      await request
+        .post('/api/v1/auth/logout')
+        .set('Authorization', `Bearer ${accessToken1}`)
+        .send({ refreshToken: refreshToken1 })
+        .expect(200);
 
       // 4. Login again
-      // const loginResponse = await axios.post(`${API_URL}/auth/login`, {
-      //   email: userData.email,
-      //   password: userData.password,
-      // });
-      // expect(loginResponse.status).toBe(200);
+      const loginResponse = await request
+        .post('/api/v1/auth/login')
+        .send({
+          email: userData.email,
+          password: userData.password,
+        })
+        .expect(200);
+
+      const accessToken2 = loginResponse.body.accessToken;
 
       // 5. Use app again
-      // const accessToken2 = loginResponse.data.data.accessToken;
-      // const meResponse2 = await axios.get(`${API_URL}/auth/me`, {
-      //   headers: { Authorization: `Bearer ${accessToken2}` }
-      // });
-      // expect(meResponse2.status).toBe(200);
+      const meResponse2 = await request
+        .get('/api/v1/auth/me')
+        .set('Authorization', `Bearer ${accessToken2}`)
+        .expect(200);
+      expect(meResponse2.body.user.email).toBe(userData.email.toLowerCase());
 
-      expect(userData.email).toContain('e2e-journey');
+      // Tokens should be different
+      expect(accessToken2).not.toBe(accessToken1);
     });
 
-    it('should handle token refresh before expiration seamlessly', async () => {
-      // Register and get tokens
-      // Simulate using app close to token expiration
-      // Refresh token automatically
+    it('should handle token refresh in middle of session', async () => {
+      const userData: RegisterData = {
+        email: 'e2e-refresh-flow@example.com',
+        password: 'RefreshFlow123!',
+        displayName: 'Refresh Flow User',
+      };
+
+      // Register and get initial tokens
+      const registerResponse = await request
+        .post('/api/v1/auth/register')
+        .send(userData)
+        .expect(201);
+
+      const { accessToken: token1, refreshToken: refresh1 } = registerResponse.body;
+
+      // Use app with first token
+      await request.get('/api/v1/auth/me').set('Authorization', `Bearer ${token1}`).expect(200);
+
+      // Refresh token
+      const refreshResponse = await request
+        .post('/api/v1/auth/refresh')
+        .send({ refreshToken: refresh1 })
+        .expect(200);
+
+      const { accessToken: token2 } = refreshResponse.body;
+
       // Continue using app with new token
-      expect(true).toBe(true);
+      await request.get('/api/v1/auth/me').set('Authorization', `Bearer ${token2}`).expect(200);
+
+      // Old token should still work (not expired yet)
+      await request.get('/api/v1/auth/me').set('Authorization', `Bearer ${token1}`).expect(200);
     });
 
-    it('should handle returning user (persisted session)', async () => {
-      // Login and store tokens
-      // Simulate closing and reopening app
-      // Use stored tokens to access app
-      // Verify seamless experience
-      expect(true).toBe(true);
+    it('should handle concurrent requests with same access token', async () => {
+      const userData: RegisterData = {
+        email: 'e2e-concurrent@example.com',
+        password: 'Concurrent123!',
+        displayName: 'Concurrent User',
+      };
+
+      const registerResponse = await request
+        .post('/api/v1/auth/register')
+        .send(userData)
+        .expect(201);
+
+      const { accessToken } = registerResponse.body;
+
+      // Make multiple concurrent requests with same token
+      const promises = Array.from({ length: 5 }, () =>
+        request.get('/api/v1/auth/me').set('Authorization', `Bearer ${accessToken}`)
+      );
+
+      const results = await Promise.all(promises);
+
+      // All requests should succeed
+      results.forEach((result) => {
+        expect(result.status).toBe(200);
+        expect(result.body.user.email).toBe(userData.email.toLowerCase());
+      });
+    });
+  });
+
+  describe('Error Recovery and Edge Cases', () => {
+    it('should handle missing authorization header gracefully', async () => {
+      const response = await request.get('/api/v1/auth/me').expect(401);
+
+      expect(response.body.error).toBeDefined();
+      expect(response.body.error.message).toMatch(/token|authorization/i);
+    });
+
+    it('should handle malformed authorization header', async () => {
+      const response = await request
+        .get('/api/v1/auth/me')
+        .set('Authorization', 'InvalidFormat')
+        .expect(401);
+
+      expect(response.body.error).toBeDefined();
+    });
+
+    it('should handle empty token', async () => {
+      const response = await request
+        .get('/api/v1/auth/me')
+        .set('Authorization', 'Bearer ')
+        .expect(401);
+
+      expect(response.body.error).toBeDefined();
+    });
+
+    it('should provide clear error for missing request body fields', async () => {
+      const response = await request.post('/api/v1/auth/login').send({}).expect(400);
+
+      expect(response.body.error).toBeDefined();
+      expect(response.body.error.message).toBeDefined();
     });
   });
 });
