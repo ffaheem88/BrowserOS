@@ -349,6 +349,45 @@ GET    /api/v1/files/:id/download # Download file
 
 ---
 
+## Troubleshooting
+
+### bcrypt Binding Error
+
+If you encounter an error like `Error loading shared library ... bcrypt_lib.node: Exec format error`, this means the bcrypt native bindings were compiled for a different architecture than your Docker container.
+
+**Solution:**
+
+1. **Stop and remove all containers and volumes:**
+   ```bash
+   docker compose down -v
+   ```
+
+2. **Rebuild the containers from scratch:**
+   ```bash
+   docker compose build --no-cache backend
+   docker compose up -d
+   ```
+
+The updated Dockerfile now includes `npm rebuild bcrypt --build-from-source` to ensure bcrypt is compiled for Alpine Linux, but you need to clear the old volumes that contain incompatible binaries.
+
+**Why this happens:**
+- Docker Compose uses named volumes for `node_modules` to improve performance
+- If dependencies were first installed on your host machine (macOS/Windows) and the volume was created with those binaries, they're incompatible with Alpine Linux in the container
+- Clearing the volume forces a fresh installation inside the container
+
+### Other Docker Issues
+
+**Container won't start:**
+- Check logs: `docker compose logs backend`
+- Ensure all required ports are available (3000, 5000, 5432, 6379, 9000, 9001)
+- Verify environment variables are set correctly
+
+**Database connection errors:**
+- Wait for PostgreSQL to fully initialize (check with `docker compose logs postgres`)
+- Ensure DATABASE_URL in backend environment matches PostgreSQL credentials
+
+---
+
 ## Performance Targets
 
 | Metric | Target | Critical Threshold |
