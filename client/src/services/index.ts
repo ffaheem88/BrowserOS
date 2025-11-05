@@ -4,3 +4,4 @@
  */
 
 export { WindowManagerService, setupWindowManagerKeyboardShortcuts } from './windowManager';
+export * as authService from './authService';

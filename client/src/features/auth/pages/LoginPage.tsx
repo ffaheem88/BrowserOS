@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { AuthLayout } from '../components/AuthLayout';
 import { LoginForm } from '../components/LoginForm';
 import { LoginCredentials } from '../../../../../shared/types';
+import { authService } from '../../../services';
+import { setUser } from '../../../utils/tokenStorage';
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -14,16 +16,14 @@ export function LoginPage() {
     setError(undefined);
 
     try {
-      // TODO: Replace with actual authentication service call
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      // Call actual authentication API
+      const response = await authService.login(credentials);
 
-      // Simulate authentication error for demo
-      if (credentials.email === 'error@test.com') {
-        throw new Error('Invalid email or password');
-      }
+      // Store user data
+      setUser(response.user);
 
       // On success, navigate to desktop
-      console.log('Login successful:', credentials);
+      console.log('Login successful:', response.user);
       navigate('/desktop');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred during login');
