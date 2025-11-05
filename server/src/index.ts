@@ -9,6 +9,12 @@ import { logger } from './config/logger.js';
 import { initializeDatabase } from './config/database.js';
 import { initializeRedis } from './config/redis.js';
 import { SessionModel } from './models/Session.js';
+import { createMigrator } from './database/migrator.js';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 /**
  * Start server
@@ -19,6 +25,20 @@ async function startServer() {
     logger.info('Initializing database connection...');
     const db = initializeDatabase();
     await db.connect();
+
+    // Run database migrations
+    logger.info('Running database migrations...');
+    const migrationsPath = join(__dirname, '../../database/migrations');
+    const migrator = createMigrator(db, migrationsPath);
+    const status = await migrator.status();
+
+    if (status.pending.length > 0) {
+      logger.info(`Found ${status.pending.length} pending migration(s)`);
+      await migrator.migrate();
+      logger.info('Database migrations completed successfully');
+    } else {
+      logger.info('Database is up to date');
+    }
 
     // Initialize Redis (non-blocking - server continues if Redis unavailable)
     logger.info('Initializing Redis connection...');
