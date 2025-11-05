@@ -174,15 +174,21 @@ export const useDesktopStore = create<DesktopStore>((set, get) => ({
         taskbar: state.taskbar
       };
 
-      // Save to localStorage immediately
+      // Save to localStorage immediately for offline-first approach
       localStorage.setItem('desktopState', JSON.stringify(stateToSave));
 
-      // TODO: Sync with backend API when available
-      // await fetch('/api/desktop/state', {
-      //   method: 'PUT',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify(stateToSave)
-      // });
+      // Sync with backend API
+      try {
+        const { desktopService } = await import('../services');
+        await desktopService.saveDesktopState({
+          wallpaper: state.wallpaper,
+          theme: state.theme,
+          taskbar: state.taskbar,
+        });
+      } catch (apiError) {
+        // Silently fail API sync - localStorage is the source of truth
+        console.warn('Failed to sync desktop state with backend:', apiError);
+      }
 
     } catch (error) {
       console.error('Failed to save desktop state:', error);
