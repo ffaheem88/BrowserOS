@@ -16,9 +16,9 @@
     "type-check": "tsc --noEmit",
     "test": "vitest",
     "test:coverage": "vitest --coverage",
-    "db:migrate": "node --loader tsx scripts/migrate.ts",
-    "db:seed": "node --loader tsx scripts/seed.ts",
-    "db:reset": "node --loader tsx scripts/reset.ts"
+    "db:migrate": "node --import tsx scripts/migrate.ts",
+    "db:seed": "node --import tsx scripts/seed.ts",
+    "db:reset": "node --import tsx scripts/reset.ts"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",
