@@ -15,6 +15,9 @@ COPY package*.json ./
 # Install all dependencies including dev dependencies
 RUN npm ci
 
+# Rebuild bcrypt for Alpine Linux architecture
+RUN npm rebuild bcrypt --build-from-source
+
 # Copy source code
 COPY . .
 
@@ -38,6 +41,9 @@ COPY package*.json ./
 # Install all dependencies
 RUN npm ci
 
+# Rebuild bcrypt for Alpine Linux architecture
+RUN npm rebuild bcrypt --build-from-source
+
 # Copy source and shared code
 COPY . .
 COPY ../shared ./shared
@@ -50,6 +56,9 @@ FROM node:20-alpine AS production
 
 WORKDIR /app
 
+# Install dependencies for native modules (needed for bcrypt)
+RUN apk add --no-cache python3 make g++
+
 # Create non-root user
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S nodejs -u 1001
@@ -58,7 +67,13 @@ RUN addgroup -g 1001 -S nodejs && \
 COPY package*.json ./
 
 # Install production dependencies only
-RUN npm ci --only=production && \
+RUN npm ci --only=production
+
+# Rebuild bcrypt for Alpine Linux architecture
+RUN npm rebuild bcrypt --build-from-source
+
+# Clean up build dependencies to reduce image size
+RUN apk del python3 make g++ && \
     npm cache clean --force
 
 # Copy built application from build stage
