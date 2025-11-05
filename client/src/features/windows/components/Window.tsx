@@ -61,11 +61,13 @@ export const Window = React.memo(function Window({
   onResizeEnd,
 }: WindowProps) {
   const nodeRef = useRef<HTMLDivElement>(null);
-  const [currentPosition, setCurrentPosition] = useState(position);
-  const [currentSize, setCurrentSize] = useState(size);
   const [isAnimating, setIsAnimating] = useState(false);
 
-  // Log initial mount and fix negative positions
+  // Keep track of current size for resize operations only
+  // Position is fully controlled by parent to avoid state conflicts
+  const [currentSize, setCurrentSize] = useState(size);
+
+  // Log initial mount
   useEffect(() => {
     console.log(`[WINDOW MOUNT] Window ${id} mounted with:`, {
       id,
@@ -75,25 +77,7 @@ export const Window = React.memo(function Window({
       zIndex,
       viewport: { width: window.innerWidth, height: window.innerHeight },
     });
-
-    // If window is positioned off-screen, reset it
-    if (position.y < 0 || position.x < -size.width + 100) {
-      const fixedX = Math.max(50, Math.min(window.innerWidth - size.width - 50, position.x));
-      const fixedY = Math.max(50, Math.min(window.innerHeight - size.height - 100, 50));
-
-      console.log(`[POSITION FIX] Window ${id} was off-screen, moving from`, position, 'to', { x: fixedX, y: fixedY });
-      onDragEnd(id, { x: fixedX, y: fixedY });
-    }
   }, []);
-
-  // Update position when prop changes (e.g., from maximize)
-  useEffect(() => {
-    console.log(`[WINDOW POSITION UPDATE] Window ${id} position changed:`, {
-      from: currentPosition,
-      to: position,
-    });
-    setCurrentPosition(position);
-  }, [position.x, position.y]);
 
   // Update size when prop changes
   useEffect(() => {
@@ -109,7 +93,6 @@ export const Window = React.memo(function Window({
     console.log(`[DRAG START] Window ${id} starting drag from:`, {
       x: data.x,
       y: data.y,
-      currentPosition,
       size: currentSize,
     });
   };
@@ -140,7 +123,7 @@ export const Window = React.memo(function Window({
       Viewport: ${window.innerWidth}x${window.innerHeight}
       Window Size: ${currentSize.width}x${currentSize.height}`);
 
-    setCurrentPosition(newPosition);
+    // Only notify parent of final position - parent is single source of truth
     onDragEnd(id, newPosition);
   };
 
@@ -242,7 +225,7 @@ export const Window = React.memo(function Window({
     return (
       <Draggable
         nodeRef={nodeRef}
-        position={currentPosition}
+        position={position}
         onStart={handleDragStart}
         onDrag={handleDrag}
         onStop={handleDragStop}
@@ -268,7 +251,7 @@ export const Window = React.memo(function Window({
     return (
       <Draggable
         nodeRef={nodeRef}
-        position={currentPosition}
+        position={position}
         onStart={handleDragStart}
         onDrag={handleDrag}
         onStop={handleDragStop}

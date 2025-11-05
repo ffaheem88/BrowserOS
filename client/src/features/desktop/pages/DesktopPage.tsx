@@ -30,6 +30,40 @@ export function DesktopPage() {
   const [nextZIndex, setNextZIndex] = useState(100);
   const [selectedIconId, setSelectedIconId] = useState<string | null>(null);
 
+  // Helper to constrain window positions to keep them visible
+  const constrainPosition = (position: { x: number; y: number }, size: { width: number; height: number }) => {
+    const taskbarHeight = 48;
+    const minY = 0;
+    const maxY = Math.max(50, window.innerHeight - taskbarHeight - 100);
+    const minX = -size.width + 100; // Allow partial off-screen left
+    const maxX = Math.max(100, window.innerWidth - 100);
+
+    return {
+      x: Math.max(minX, Math.min(maxX, position.x)),
+      y: Math.max(minY, Math.min(maxY, position.y)),
+    };
+  };
+
+  // Helper to compact z-indices when they get too large
+  const compactZIndices = () => {
+    if (nextZIndex > 1000) {
+      console.log('[Z-INDEX] Compacting z-indices...');
+      const sortedWindows = Object.values(windows).sort((a: any, b: any) => a.zIndex - b.zIndex);
+      const compacted: Record<string, any> = {};
+
+      sortedWindows.forEach((win: any, index: number) => {
+        compacted[win.id] = {
+          ...win,
+          zIndex: 100 + index,
+        };
+      });
+
+      setWindows(compacted);
+      setNextZIndex(100 + sortedWindows.length);
+      console.log('[Z-INDEX] Compacted to range 100-' + (100 + sortedWindows.length));
+    }
+  };
+
   // Demo desktop icons - using React components instead of SVG paths
   const [icons, setIcons] = useState([
     {
@@ -87,13 +121,19 @@ export function DesktopPage() {
     const cascadeStep = windowCount % maxCascadeSteps;
 
     // Start from a safe position and cascade
-    const x = 100 + (cascadeStep * cascadeOffset);
-    const y = 50 + (cascadeStep * cascadeOffset);
+    const initialX = 100 + (cascadeStep * cascadeOffset);
+    const initialY = 50 + (cascadeStep * cascadeOffset);
+
+    // Constrain the position to ensure it's visible
+    const constrainedPosition = constrainPosition(
+      { x: initialX, y: initialY },
+      appConfig.size
+    );
 
     console.log(`[CREATE WINDOW] Creating window ${id}:
       App: ${appId}
       Window #${windowCount + 1} (cascade step ${cascadeStep})
-      Position: x=${x}, y=${y}
+      Position: x=${constrainedPosition.x}, y=${constrainedPosition.y} (initial: ${initialX},${initialY})
       Size: ${appConfig.size.width}x${appConfig.size.height}
       Viewport: ${window.innerWidth}x${window.innerHeight}
       Existing windows: ${Object.keys(windows).length}`);
@@ -102,7 +142,7 @@ export function DesktopPage() {
       id,
       appId,
       title: appConfig.title,
-      position: { x, y },
+      position: constrainedPosition,
       size: appConfig.size,
       state: 'normal',
       zIndex,
@@ -116,21 +156,38 @@ export function DesktopPage() {
     };
 
     setWindows((prev) => {
+      // Unfocus all existing windows
+      const unfocusedWindows: Record<string, any> = {};
+      Object.keys(prev).forEach((key) => {
+        unfocusedWindows[key] = {
+          ...prev[key],
+          focused: false,
+        };
+      });
+
+      // Add the new focused window
       const updated = {
-        ...prev,
+        ...unfocusedWindows,
         [id]: newWindow,
       };
+
       console.log(`[WINDOWS STATE] After create:`, Object.keys(updated).map(k => ({
         id: k,
         position: updated[k].position,
         state: updated[k].state,
         zIndex: updated[k].zIndex,
+        focused: updated[k].focused,
       })));
       return updated;
     });
 
     setFocusedWindowId(id);
     setNextZIndex(zIndex + 1);
+
+    // Compact z-indices if getting too large
+    if (zIndex > 1000) {
+      setTimeout(compactZIndices, 0);
+    }
 
     return id;
   };
@@ -290,15 +347,37 @@ export function DesktopPage() {
 
   const handleFocusWindow = (id: string) => {
     setFocusedWindowId(id);
-    setWindows((prev) => ({
-      ...prev,
-      [id]: {
-        ...prev[id],
-        zIndex: nextZIndex,
-        focused: true,
-      },
-    }));
+
+    // Unfocus all windows first, then focus the target window
+    setWindows((prev) => {
+      const updated: Record<string, any> = {};
+
+      // Unfocus all windows
+      Object.keys(prev).forEach((key) => {
+        updated[key] = {
+          ...prev[key],
+          focused: false,
+        };
+      });
+
+      // Focus the target window and bring it to front
+      if (updated[id]) {
+        updated[id] = {
+          ...updated[id],
+          focused: true,
+          zIndex: nextZIndex,
+        };
+      }
+
+      return updated;
+    });
+
     setNextZIndex(nextZIndex + 1);
+
+    // Compact z-indices if getting too large
+    if (nextZIndex > 1000) {
+      setTimeout(compactZIndices, 0);
+    }
   };
 
   const handleUpdatePosition = (id: string, position: { x: number; y: number }) => {
