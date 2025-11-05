@@ -129,7 +129,27 @@ export const useDesktopStore = create<DesktopStore>((set, get) => ({
         set({ loading: false });
       }
 
-      // TODO: Fetch from backend API when available
+      // Fetch from backend API for latest state
+      const { desktopService } = await import('../services');
+      const response = await desktopService.getDesktopState();
+
+      if (response.state) {
+        set({
+          wallpaper: response.state.wallpaper,
+          theme: response.state.theme,
+          taskbar: response.state.taskbar,
+          loading: false
+        });
+
+        // Update localStorage cache
+        localStorage.setItem('desktopState', JSON.stringify(response.state));
+
+        // Apply theme again if needed
+        if (typeof document !== 'undefined') {
+          document.documentElement.classList.remove('light', 'dark');
+          document.documentElement.classList.add(response.state.theme || 'dark');
+        }
+      }
       // const response = await fetch('/api/desktop/state');
       // const data = await response.json();
       // set({ ...data, loading: false });

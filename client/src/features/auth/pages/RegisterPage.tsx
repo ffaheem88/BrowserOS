@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { AuthLayout } from '../components/AuthLayout';
 import { RegisterForm } from '../components/RegisterForm';
 import { RegisterData } from '../../../../../shared/types';
+import { authService } from '../../../services';
+import { setUser } from '../../../utils/tokenStorage';
 
 export function RegisterPage() {
   const navigate = useNavigate();
@@ -14,16 +16,14 @@ export function RegisterPage() {
     setError(undefined);
 
     try {
-      // TODO: Replace with actual authentication service call
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      // Call actual authentication API
+      const response = await authService.register(data);
 
-      // Simulate duplicate email error for demo
-      if (data.email === 'exists@test.com') {
-        throw new Error('An account with this email already exists');
-      }
+      // Store user data
+      setUser(response.user);
 
-      // On success, navigate to desktop or login
-      console.log('Registration successful:', data);
+      // On success, navigate to desktop
+      console.log('Registration successful:', response.user);
       navigate('/desktop');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred during registration');
