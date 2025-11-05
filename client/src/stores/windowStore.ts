@@ -333,14 +333,30 @@ export const useWindowStore = create<WindowStore>((set, get) => ({
         focusedWindowId: state.focusedWindowId
       };
 
+      // Save to localStorage immediately for offline-first approach
       localStorage.setItem('windowState', JSON.stringify(stateToSave));
 
-      // TODO: Sync with backend API when available
-      // await fetch('/api/desktop/windows', {
-      //   method: 'POST',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify(stateToSave)
-      // });
+      // Sync with backend API
+      try {
+        const { desktopService } = await import('../services');
+        const windowArray = Object.values(state.windows).map((win) => ({
+          id: win.id,
+          appId: win.appId,
+          title: win.title,
+          position: win.position,
+          size: win.size,
+          state: win.state,
+          zIndex: win.zIndex,
+          focused: win.focused,
+          resizable: win.resizable,
+          movable: win.movable,
+        }));
+
+        await desktopService.saveWindows(windowArray);
+      } catch (apiError) {
+        // Silently fail API sync - localStorage is the source of truth
+        console.warn('Failed to sync windows with backend:', apiError);
+      }
 
     } catch (error) {
       console.error('Failed to save window state:', error);
@@ -350,6 +366,7 @@ export const useWindowStore = create<WindowStore>((set, get) => ({
   // Load window state from storage
   loadWindowState: async () => {
     try {
+      // Load from localStorage first for immediate availability
       const cached = localStorage.getItem('windowState');
       if (cached) {
         const state = JSON.parse(cached);
@@ -359,10 +376,61 @@ export const useWindowStore = create<WindowStore>((set, get) => ({
         });
       }
 
-      // TODO: Fetch from backend API when available
-      // const response = await fetch('/api/desktop/windows');
-      // const data = await response.json();
-      // set({ windows: data.windows, focusedWindowId: data.focusedWindowId });
+      // Fetch from backend API for latest state
+      try {
+        const { desktopService } = await import('../services');
+        const response = await desktopService.getWindows();
+
+        if (response.windows && response.windows.length > 0) {
+          // Convert array to Record for store
+          const windowsRecord: Record<string, WindowState> = {};
+          let maxZIndex = BASE_Z_INDEX;
+          let focusedId: string | null = null;
+
+          response.windows.forEach((win) => {
+            if (win.id) {
+              windowsRecord[win.id] = {
+                id: win.id,
+                appId: win.appId,
+                title: win.title,
+                icon: undefined, // Icon will be resolved by app
+                position: win.position,
+                size: win.size,
+                state: win.state || 'normal',
+                zIndex: win.zIndex || BASE_Z_INDEX,
+                focused: win.focused || false,
+                resizable: win.resizable !== undefined ? win.resizable : true,
+                movable: win.movable !== undefined ? win.movable : true,
+                minimizable: true,
+                maximizable: true,
+              };
+
+              if (win.zIndex && win.zIndex > maxZIndex) {
+                maxZIndex = win.zIndex;
+              }
+
+              if (win.focused) {
+                focusedId = win.id;
+              }
+            }
+          });
+
+          set({
+            windows: windowsRecord,
+            focusedWindowId: focusedId,
+            nextZIndex: maxZIndex + 1,
+          });
+
+          // Update localStorage cache
+          localStorage.setItem('windowState', JSON.stringify({
+            windows: windowsRecord,
+            focusedWindowId: focusedId
+          }));
+        }
+      } catch (apiError) {
+        // Silently fail API fetch - localStorage is the fallback
+        console.warn('Failed to fetch windows from backend:', apiError);
+      }
 
     } catch (error) {
       console.error('Failed to load window state:', error);
